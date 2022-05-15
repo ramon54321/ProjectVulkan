@@ -5,11 +5,13 @@ use vulkano::{
         QueueCreateInfo,
     },
     instance::{Instance, InstanceCreateInfo, InstanceExtensions},
+    swapchain::Surface,
 };
+use vulkano_win::VkSurfaceBuild;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
 struct App {}
@@ -20,19 +22,34 @@ impl App {
     }
     pub fn start(&mut self) {
         let instance = self.setup_instance();
-        let (logical_device, queue) = self.setup_logical_device_and_queue(instance);
-        self.main_loop();
+        let event_loop = EventLoop::new();
+        let surface = self.setup_surface(instance.clone(), &event_loop);
+        let (logical_device, queue) = self.setup_logical_device_and_queue(instance.clone());
+        self.main_loop(event_loop);
     }
     fn setup_instance(&mut self) -> Arc<Instance> {
         let instance = Instance::new(InstanceCreateInfo {
             enabled_extensions: InstanceExtensions {
                 khr_get_physical_device_properties2: true,
+                khr_surface: true,
+                mvk_macos_surface: true,
                 ..InstanceExtensions::none()
             },
             ..Default::default()
         })
         .expect("Could not create instance");
         instance
+    }
+    fn setup_surface(
+        &mut self,
+        instance: Arc<Instance>,
+        event_loop: &EventLoop<()>,
+    ) -> Arc<Surface<Window>> {
+        let surface = WindowBuilder::new()
+            .with_title("My Vulkan Window")
+            .build_vk_surface(event_loop, instance)
+            .expect("Unable to create window");
+        surface
     }
     fn setup_logical_device_and_queue(
         &mut self,
@@ -60,12 +77,7 @@ impl App {
         let queue = queues.next().expect("Could not get first queue");
         (logical_device, queue)
     }
-    fn main_loop(&mut self) {
-        let event_loop = EventLoop::new();
-        let _window = WindowBuilder::new()
-            .with_title("My Vulkan Window")
-            .build(&event_loop)
-            .expect("Unable to create window");
+    fn main_loop(&mut self, event_loop: EventLoop<()>) {
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
             match event {
