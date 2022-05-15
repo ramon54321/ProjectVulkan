@@ -4,8 +4,9 @@ use vulkano::{
         physical::PhysicalDevice, Device, DeviceCreateInfo, DeviceExtensions, Queue,
         QueueCreateInfo,
     },
+    image::{ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo, InstanceExtensions},
-    swapchain::Surface,
+    swapchain::{Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo},
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::{
@@ -20,13 +21,17 @@ impl App {
     pub fn new() -> Self {
         Self {}
     }
+
     pub fn start(&mut self) {
         let instance = self.setup_instance();
         let event_loop = EventLoop::new();
         let surface = self.setup_surface(instance.clone(), &event_loop);
         let (logical_device, queue) = self.setup_logical_device_and_queue(instance.clone());
+        let (swapchain, images) =
+            self.setup_swapchain_and_images(logical_device.clone(), surface.clone());
         self.main_loop(event_loop);
     }
+
     fn setup_instance(&mut self) -> Arc<Instance> {
         let instance = Instance::new(InstanceCreateInfo {
             enabled_extensions: InstanceExtensions {
@@ -40,6 +45,7 @@ impl App {
         .expect("Could not create instance");
         instance
     }
+
     fn setup_surface(
         &mut self,
         instance: Arc<Instance>,
@@ -51,6 +57,7 @@ impl App {
             .expect("Unable to create window");
         surface
     }
+
     fn setup_logical_device_and_queue(
         &mut self,
         instance: Arc<Instance>,
@@ -67,6 +74,7 @@ impl App {
             DeviceCreateInfo {
                 enabled_extensions: DeviceExtensions {
                     khr_portability_subset: true,
+                    khr_swapchain: true,
                     ..DeviceExtensions::none()
                 },
                 queue_create_infos: vec![QueueCreateInfo::family(queue_family)],
@@ -77,6 +85,30 @@ impl App {
         let queue = queues.next().expect("Could not get first queue");
         (logical_device, queue)
     }
+
+    fn setup_swapchain_and_images(
+        &mut self,
+        logical_device: Arc<Device>,
+        surface: Arc<Surface<Window>>,
+    ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
+        // Just for demonstration purposes on querying capabilities
+        //let capabilities = logical_device
+        //.physical_device()
+        //.surface_capabilities(&surface, Default::default());
+        //println!("{:?}", capabilities);
+        let image_usage = ImageUsage {
+            color_attachment: true,
+            ..ImageUsage::none()
+        };
+        let swapchain_create_info = SwapchainCreateInfo {
+            image_usage: image_usage,
+            ..SwapchainCreateInfo::default()
+        };
+        let (swapchain, images) = Swapchain::new(logical_device, surface, swapchain_create_info)
+            .expect("Could not create swapchain");
+        (swapchain, images)
+    }
+
     fn main_loop(&mut self, event_loop: EventLoop<()>) {
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
