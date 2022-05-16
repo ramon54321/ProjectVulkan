@@ -29,6 +29,7 @@ impl App {
         let (logical_device, queue) = self.setup_logical_device_and_queue(instance.clone());
         let (swapchain, images) =
             self.setup_swapchain_and_images(logical_device.clone(), surface.clone());
+        let graphics_pipeline = self.setup_graphics_pipeline(logical_device.clone());
         self.main_loop(event_loop);
     }
 
@@ -107,6 +108,58 @@ impl App {
         let (swapchain, images) = Swapchain::new(logical_device, surface, swapchain_create_info)
             .expect("Could not create swapchain");
         (swapchain, images)
+    }
+
+    fn setup_graphics_pipeline(&mut self, logical_device: Arc<Device>) {
+        mod vertex_shader {
+            vulkano_shaders::shader! {
+                ty: "vertex",
+                src: "
+                #version 450
+
+                layout(location = 0) out vec3 fragColor;
+
+                vec2 positions[3] = vec2[](
+                    vec2(0.0, -0.5),
+                    vec2(0.5, 0.5),
+                    vec2(-0.5, 0.5)
+                );
+
+                vec3 colors[3] = vec3[](
+                    vec3(1.0, 0.0, 0.0),
+                    vec3(0.0, 1.0, 0.0),
+                    vec3(0.0, 0.0, 1.0)
+                );
+
+                void main() {
+                    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+                    fragColor = colors[gl_VertexIndex];
+                }
+                    "
+            }
+        }
+
+        mod fragment_shader {
+            vulkano_shaders::shader! {
+                ty: "fragment",
+                src: "
+                #version 450
+
+                layout(location = 0) in vec3 fragColor;
+
+                layout(location = 0) out vec4 outColor;
+
+                void main() {
+                    outColor = vec4(fragColor, 1.0);
+                }
+                    "
+            }
+        }
+
+        let vertex_shader_module =
+            vertex_shader::load(logical_device.clone()).expect("Could not load vertex shader");
+        let fragment_shader_module =
+            fragment_shader::load(logical_device.clone()).expect("Could not load fragment shader");
     }
 
     fn main_loop(&mut self, event_loop: EventLoop<()>) {
