@@ -1,5 +1,9 @@
 use std::sync::Arc;
 use vulkano::{
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        PrimaryCommandBuffer,
+    },
     device::{
         physical::PhysicalDevice, Device, DeviceCreateInfo, DeviceExtensions, Queue,
         QueueCreateInfo,
@@ -46,6 +50,7 @@ impl App {
             swapchain.image_extent(),
             render_pass.clone(),
         );
+        let command_buffer = self.create_command_buffer(logical_device.clone(), queue.clone());
         self.main_loop(event_loop);
     }
 
@@ -230,6 +235,19 @@ impl App {
         pipeline_builder
             .build(logical_device.clone())
             .expect("Could not build graphics pipeline")
+    }
+
+    fn create_command_buffer(
+        &mut self,
+        logical_device: Arc<Device>,
+        queue: Arc<Queue>,
+    ) -> AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+        AutoCommandBufferBuilder::primary(
+            logical_device,
+            queue.family(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .expect("Could not create command buffer")
     }
 
     fn main_loop(&mut self, event_loop: EventLoop<()>) {
