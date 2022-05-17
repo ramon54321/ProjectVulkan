@@ -4,8 +4,19 @@ use vulkano::{
         physical::PhysicalDevice, Device, DeviceCreateInfo, DeviceExtensions, Queue,
         QueueCreateInfo,
     },
+    format::Format,
     image::{ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo, InstanceExtensions},
+    pipeline::{
+        graphics::{
+            input_assembly::InputAssemblyState,
+            vertex_input::VertexInputState,
+            viewport::{Viewport, ViewportState},
+        },
+        GraphicsPipeline, Pipeline,
+    },
+    render_pass::{RenderPass, Subpass},
+    single_pass_renderpass,
     swapchain::{Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo},
 };
 use vulkano_win::VkSurfaceBuild;
@@ -29,7 +40,12 @@ impl App {
         let (logical_device, queue) = self.setup_logical_device_and_queue(instance.clone());
         let (swapchain, images) =
             self.setup_swapchain_and_images(logical_device.clone(), surface.clone());
-        let graphics_pipeline = self.setup_graphics_pipeline(logical_device.clone());
+        let render_pass = self.setup_render_pass(logical_device.clone());
+        let graphics_pipeline = self.setup_graphics_pipeline(
+            logical_device.clone(),
+            swapchain.image_extent(),
+            render_pass.clone(),
+        );
         self.main_loop(event_loop);
     }
 
@@ -110,7 +126,30 @@ impl App {
         (swapchain, images)
     }
 
-    fn setup_graphics_pipeline(&mut self, logical_device: Arc<Device>) {
+    fn setup_render_pass(&mut self, logical_device: Arc<Device>) -> Arc<RenderPass> {
+        single_pass_renderpass!(logical_device,
+                                attachments: {
+                                    color: {
+                                        load: Clear,
+                                        store: Store,
+                                        format: Format::R8G8B8A8_UNORM,
+                                        samples: 1,
+                                    }
+                                },
+                                pass: {
+                                    color: [color],
+                                    depth_stencil: {}
+                                }
+        )
+        .unwrap()
+    }
+
+    fn setup_graphics_pipeline(
+        &mut self,
+        logical_device: Arc<Device>,
+        swap_chain_extent: [u32; 2],
+        render_pass: Arc<RenderPass>,
+    ) -> Arc<GraphicsPipeline> {
         mod vertex_shader {
             vulkano_shaders::shader! {
                 ty: "vertex",
@@ -160,6 +199,37 @@ impl App {
             vertex_shader::load(logical_device.clone()).expect("Could not load vertex shader");
         let fragment_shader_module =
             fragment_shader::load(logical_device.clone()).expect("Could not load fragment shader");
+
+        let viewport = Viewport {
+            origin: [0.0, 0.0],
+            dimensions: [swap_chain_extent[0] as f32, swap_chain_extent[1] as f32],
+            depth_range: 0.0..1.0,
+        };
+
+        let pipeline_builder = GraphicsPipeline::start()
+            .vertex_input_state(VertexInputState::default())
+            .input_assembly_state(InputAssemblyState::default())
+            .vertex_shader(
+                vertex_shader_module
+                    .entry_point("main")
+                    .expect("Could not find entry point for vertex shader module"),
+                (),
+            )
+            .fragment_shader(
+                fragment_shader_module
+                    .entry_point("main")
+                    .expect("Could not find entry point for fragment shader module"),
+                (),
+            )
+            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
+            .render_pass(
+                Subpass::from(render_pass.clone(), 0)
+                    .expect("Could not create subpass from render pass"),
+            );
+
+        pipeline_builder
+            .build(logical_device.clone())
+            .expect("Could not build graphics pipeline")
     }
 
     fn main_loop(&mut self, event_loop: EventLoop<()>) {
