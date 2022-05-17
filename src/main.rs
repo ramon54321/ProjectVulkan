@@ -9,7 +9,7 @@ use vulkano::{
         QueueCreateInfo,
     },
     format::Format,
-    image::{ImageUsage, SwapchainImage},
+    image::{view::ImageView, ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo, InstanceExtensions},
     pipeline::{
         graphics::{
@@ -19,7 +19,7 @@ use vulkano::{
         },
         GraphicsPipeline, Pipeline,
     },
-    render_pass::{RenderPass, Subpass},
+    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     single_pass_renderpass,
     swapchain::{Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo},
 };
@@ -50,7 +50,8 @@ impl App {
             swapchain.image_extent(),
             render_pass.clone(),
         );
-        let command_buffer = self.create_command_buffer(logical_device.clone(), queue.clone());
+        let framebuffers = self.setup_framebuffers(&images, render_pass.clone());
+        let command_buffer = self.setup_command_buffer(logical_device.clone(), queue.clone());
         self.main_loop(event_loop);
     }
 
@@ -137,7 +138,7 @@ impl App {
                                     color: {
                                         load: Clear,
                                         store: Store,
-                                        format: Format::R8G8B8A8_UNORM,
+                                        format: Format::B8G8R8A8_UNORM,
                                         samples: 1,
                                     }
                                 },
@@ -237,7 +238,29 @@ impl App {
             .expect("Could not build graphics pipeline")
     }
 
-    fn create_command_buffer(
+    fn setup_framebuffers(
+        &mut self,
+        images: &Vec<Arc<SwapchainImage<Window>>>,
+        render_pass: Arc<RenderPass>,
+    ) -> Vec<Arc<Framebuffer>> {
+        images
+            .iter()
+            .map(|image| {
+                let image_view =
+                    ImageView::new_default(image.clone()).expect("Could not create image view");
+                Framebuffer::new(
+                    render_pass.clone(),
+                    FramebufferCreateInfo {
+                        attachments: vec![image_view],
+                        ..FramebufferCreateInfo::default()
+                    },
+                )
+                .expect("Could not create framebuffer")
+            })
+            .collect()
+    }
+
+    fn setup_command_buffer(
         &mut self,
         logical_device: Arc<Device>,
         queue: Arc<Queue>,
