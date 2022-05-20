@@ -55,12 +55,8 @@ impl App {
             render_pass.clone(),
         );
         let framebuffers = self.setup_framebuffers(&images, render_pass.clone());
-        let command_buffer = self.setup_command_buffer(
-            &logical_device.clone(),
-            &queue.clone(),
-            &framebuffers,
-            &graphics_pipeline,
-        );
+        let command_buffer =
+            self.setup_command_buffer(&logical_device, &queue, &framebuffers, &graphics_pipeline);
 
         self.main_loop(event_loop);
     }
