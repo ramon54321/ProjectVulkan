@@ -21,7 +21,8 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     single_pass_renderpass,
-    swapchain::{Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo},
+    swapchain::{acquire_next_image, Surface, SurfaceCapabilities, Swapchain, SwapchainCreateInfo},
+    sync::{now, GpuFuture},
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::{
@@ -55,10 +56,16 @@ impl App {
             render_pass.clone(),
         );
         let framebuffers = self.setup_framebuffers(&images, render_pass.clone());
-        let command_buffer =
-            self.setup_command_buffer(&logical_device, &queue, &framebuffers, &graphics_pipeline);
 
-        self.main_loop(event_loop);
+        let vulkan_connector = VulkanConnector {
+            logical_device,
+            queue,
+            framebuffers,
+            graphics_pipeline,
+            swapchain,
+        };
+
+        Self::main_loop(event_loop, vulkan_connector);
     }
 
     fn setup_instance(&mut self) -> Arc<Instance> {
@@ -266,44 +273,46 @@ impl App {
             .collect()
     }
 
-    fn setup_command_buffer(
-        &self,
+    fn setup_command_buffers(
         logical_device: &Arc<Device>,
         queue: &Arc<Queue>,
         framebuffers: &Vec<Arc<Framebuffer>>,
         graphics_pipeline: &Arc<GraphicsPipeline>,
-    ) -> PrimaryAutoCommandBuffer {
-        let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
-            logical_device.clone(),
-            queue.family(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .expect("Could not create command buffer");
+    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+        framebuffers
+            .iter()
+            .map(|framebuffer| {
+                let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
+                    logical_device.clone(),
+                    queue.family(),
+                    CommandBufferUsage::OneTimeSubmit,
+                )
+                .expect("Could not create command buffer");
 
-        command_buffer_builder
-            .begin_render_pass(
-                framebuffers
-                    .get(0)
-                    .expect("Unable to get framebuffer for command buffer")
-                    .clone(),
-                SubpassContents::Inline,
-                vec![[0.0, 0.0, 1.0, 1.0].into()],
-            )
-            .expect("Could not begin render pass")
-            .bind_pipeline_graphics(graphics_pipeline.clone())
-            .draw(3, 1, 0, 0)
-            .expect("Could not draw")
-            .end_render_pass()
-            .expect("Could not end render pass");
+                command_buffer_builder
+                    .begin_render_pass(
+                        framebuffer.clone(),
+                        SubpassContents::Inline,
+                        vec![[0.0, 0.0, 1.0, 1.0].into()],
+                    )
+                    .expect("Could not begin render pass")
+                    .bind_pipeline_graphics(graphics_pipeline.clone())
+                    .draw(3, 1, 0, 0)
+                    .expect("Could not draw")
+                    .end_render_pass()
+                    .expect("Could not end render pass");
 
-        let command_buffer = command_buffer_builder
-            .build()
-            .expect("Could not build command buffer");
+                let command_buffer = command_buffer_builder
+                    .build()
+                    .expect("Could not build command buffer");
 
-        command_buffer
+                Arc::new(command_buffer)
+            })
+            .collect()
     }
 
-    fn main_loop(&mut self, event_loop: EventLoop<()>) {
+    fn main_loop(event_loop: EventLoop<()>, vulkan_connector: VulkanConnector) {
+        let mut previous_frame_end = Some(now(vulkan_connector.logical_device.clone()));
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Poll;
             match event {
@@ -311,10 +320,56 @@ impl App {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => *control_flow = ControlFlow::Exit,
+                Event::RedrawEventsCleared => {
+                    previous_frame_end
+                        .as_mut()
+                        .expect("Could not get previous frame end")
+                        .cleanup_finished();
+
+                    let command_buffers = Self::setup_command_buffers(
+                        &vulkan_connector.logical_device,
+                        &vulkan_connector.queue,
+                        &vulkan_connector.framebuffers,
+                        &vulkan_connector.graphics_pipeline,
+                    );
+
+                    let (image_index, is_acquired_image_suboptimal, acquire_future) =
+                        match acquire_next_image(vulkan_connector.swapchain.clone(), None) {
+                            Ok(result) => result,
+                            Err(e) => panic!("{:?}", e),
+                        };
+
+                    let execution_future = now(vulkan_connector.logical_device.clone())
+                        .join(acquire_future)
+                        .then_execute(
+                            vulkan_connector.queue.clone(),
+                            command_buffers[image_index].clone(),
+                        )
+                        .unwrap()
+                        .then_swapchain_present(
+                            vulkan_connector.queue.clone(),
+                            vulkan_connector.swapchain.clone(),
+                            image_index,
+                        )
+                        .then_signal_fence_and_flush();
+
+                    execution_future
+                        .expect("Execution future was not present")
+                        .wait(None)
+                        .expect("Execution future could not wait");
+                }
                 _ => (),
             }
         });
     }
+}
+
+struct VulkanConnector {
+    logical_device: Arc<Device>,
+    queue: Arc<Queue>,
+    framebuffers: Vec<Arc<Framebuffer>>,
+    graphics_pipeline: Arc<GraphicsPipeline>,
+    swapchain: Arc<Swapchain<Window>>,
 }
 
 fn main() {
