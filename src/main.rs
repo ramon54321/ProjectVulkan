@@ -55,28 +55,12 @@ impl App {
             render_pass.clone(),
         );
         let framebuffers = self.setup_framebuffers(&images, render_pass.clone());
-        let mut command_buffer_builder =
-            self.setup_command_buffer_builder(&logical_device.clone(), &queue.clone());
-
-        command_buffer_builder
-            .begin_render_pass(
-                framebuffers
-                    .get(0)
-                    .expect("Unable to get framebuffer for command buffer")
-                    .clone(),
-                SubpassContents::Inline,
-                vec![[0.0, 0.0, 1.0, 1.0].into()],
-            )
-            .expect("Could not begin render pass")
-            .bind_pipeline_graphics(graphics_pipeline.clone())
-            .draw(3, 1, 0, 0)
-            .expect("Could not draw")
-            .end_render_pass()
-            .expect("Could not end render pass");
-
-        let command_buffer = command_buffer_builder
-            .build()
-            .expect("Could not build command buffer");
+        let command_buffer = self.setup_command_buffer(
+            &logical_device.clone(),
+            &queue.clone(),
+            &framebuffers,
+            &graphics_pipeline,
+        );
 
         self.main_loop(event_loop);
     }
@@ -286,17 +270,41 @@ impl App {
             .collect()
     }
 
-    fn setup_command_buffer_builder(
+    fn setup_command_buffer(
         &self,
         logical_device: &Arc<Device>,
         queue: &Arc<Queue>,
-    ) -> AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
-        AutoCommandBufferBuilder::primary(
+        framebuffers: &Vec<Arc<Framebuffer>>,
+        graphics_pipeline: &Arc<GraphicsPipeline>,
+    ) -> PrimaryAutoCommandBuffer {
+        let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
             logical_device.clone(),
             queue.family(),
             CommandBufferUsage::OneTimeSubmit,
         )
-        .expect("Could not create command buffer")
+        .expect("Could not create command buffer");
+
+        command_buffer_builder
+            .begin_render_pass(
+                framebuffers
+                    .get(0)
+                    .expect("Unable to get framebuffer for command buffer")
+                    .clone(),
+                SubpassContents::Inline,
+                vec![[0.0, 0.0, 1.0, 1.0].into()],
+            )
+            .expect("Could not begin render pass")
+            .bind_pipeline_graphics(graphics_pipeline.clone())
+            .draw(3, 1, 0, 0)
+            .expect("Could not draw")
+            .end_render_pass()
+            .expect("Could not end render pass");
+
+        let command_buffer = command_buffer_builder
+            .build()
+            .expect("Could not build command buffer");
+
+        command_buffer
     }
 
     fn main_loop(&mut self, event_loop: EventLoop<()>) {
