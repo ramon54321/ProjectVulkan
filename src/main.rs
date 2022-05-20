@@ -2,7 +2,7 @@ use std::sync::Arc;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        PrimaryCommandBuffer,
+        PrimaryCommandBuffer, SubpassContents,
     },
     device::{
         physical::PhysicalDevice, Device, DeviceCreateInfo, DeviceExtensions, Queue,
@@ -30,11 +30,15 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-struct App {}
+struct App {
+    command_buffer: Option<Arc<PrimaryAutoCommandBuffer>>,
+}
 
 impl App {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            command_buffer: None,
+        }
     }
 
     pub fn start(&mut self) {
@@ -51,7 +55,29 @@ impl App {
             render_pass.clone(),
         );
         let framebuffers = self.setup_framebuffers(&images, render_pass.clone());
-        let command_buffer = self.setup_command_buffer(logical_device.clone(), queue.clone());
+        let mut command_buffer_builder =
+            self.setup_command_buffer_builder(&logical_device.clone(), &queue.clone());
+
+        command_buffer_builder
+            .begin_render_pass(
+                framebuffers
+                    .get(0)
+                    .expect("Unable to get framebuffer for command buffer")
+                    .clone(),
+                SubpassContents::Inline,
+                vec![[0.0, 0.0, 1.0, 1.0].into()],
+            )
+            .expect("Could not begin render pass")
+            .bind_pipeline_graphics(graphics_pipeline.clone())
+            .draw(3, 1, 0, 0)
+            .expect("Could not draw")
+            .end_render_pass()
+            .expect("Could not end render pass");
+
+        let command_buffer = command_buffer_builder
+            .build()
+            .expect("Could not build command buffer");
+
         self.main_loop(event_loop);
     }
 
@@ -260,13 +286,13 @@ impl App {
             .collect()
     }
 
-    fn setup_command_buffer(
-        &mut self,
-        logical_device: Arc<Device>,
-        queue: Arc<Queue>,
+    fn setup_command_buffer_builder(
+        &self,
+        logical_device: &Arc<Device>,
+        queue: &Arc<Queue>,
     ) -> AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
         AutoCommandBufferBuilder::primary(
-            logical_device,
+            logical_device.clone(),
             queue.family(),
             CommandBufferUsage::OneTimeSubmit,
         )
