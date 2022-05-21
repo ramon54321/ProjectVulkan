@@ -1,5 +1,7 @@
+use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
 use vulkano::{
+    buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
         PrimaryCommandBuffer, SubpassContents,
@@ -10,11 +12,12 @@ use vulkano::{
     },
     format::Format,
     image::{view::ImageView, ImageUsage, SwapchainImage},
+    impl_vertex,
     instance::{Instance, InstanceCreateInfo, InstanceExtensions},
     pipeline::{
         graphics::{
             input_assembly::InputAssemblyState,
-            vertex_input::VertexInputState,
+            vertex_input::{BuffersDefinition, VertexInputState},
             viewport::{Viewport, ViewportState},
         },
         GraphicsPipeline, Pipeline,
@@ -129,23 +132,10 @@ fn setup_graphics_pipeline(
             src: "
                 #version 450
 
-                layout(location = 0) out vec3 fragColor;
-
-                vec2 positions[3] = vec2[](
-                    vec2(0.0, -0.5),
-                    vec2(0.5, 0.5),
-                    vec2(-0.5, 0.5)
-                );
-
-                vec3 colors[3] = vec3[](
-                    vec3(1.0, 0.0, 0.0),
-                    vec3(0.0, 1.0, 0.0),
-                    vec3(0.0, 0.0, 1.0)
-                );
+                layout(location = 0) in vec2 position;
 
                 void main() {
-                    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-                    fragColor = colors[gl_VertexIndex];
+                    gl_Position = vec4(position, 0.0, 1.0);
                 }
                     "
         }
@@ -157,12 +147,10 @@ fn setup_graphics_pipeline(
             src: "
                 #version 450
 
-                layout(location = 0) in vec3 fragColor;
-
                 layout(location = 0) out vec4 outColor;
 
                 void main() {
-                    outColor = vec4(fragColor, 1.0);
+                    outColor = vec4(0.8, 0.0, 0.0, 1.0);
                 }
                     "
         }
@@ -180,7 +168,7 @@ fn setup_graphics_pipeline(
     };
 
     let pipeline_builder = GraphicsPipeline::start()
-        .vertex_input_state(VertexInputState::default())
+        .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
         .input_assembly_state(InputAssemblyState::default())
         .vertex_shader(
             vertex_shader_module
@@ -231,6 +219,7 @@ fn setup_command_buffers(
     queue: &Arc<Queue>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     graphics_pipeline: &Arc<GraphicsPipeline>,
+    vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -246,10 +235,11 @@ fn setup_command_buffers(
                 .begin_render_pass(
                     framebuffer.clone(),
                     SubpassContents::Inline,
-                    vec![[0.0, 0.0, 0.0, 1.0].into()],
+                    vec![[1.0, 1.0, 1.0, 1.0].into()],
                 )
                 .expect("Could not begin render pass")
                 .bind_pipeline_graphics(graphics_pipeline.clone())
+                .bind_vertex_buffers(0, vertex_buffer.clone())
                 .draw(3, 1, 0, 0)
                 .expect("Could not draw")
                 .end_render_pass()
@@ -262,6 +252,34 @@ fn setup_command_buffers(
             Arc::new(command_buffer)
         })
         .collect()
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Zeroable, Pod)]
+struct Vertex {
+    position: [f32; 2],
+}
+impl_vertex!(Vertex, position);
+
+fn setup_vertexbuffer(logical_device: Arc<Device>) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
+    CpuAccessibleBuffer::from_iter(
+        logical_device,
+        BufferUsage::vertex_buffer(),
+        false,
+        vec![
+            Vertex {
+                position: [-0.5, -0.5],
+            },
+            Vertex {
+                position: [0.0, 0.5],
+            },
+            Vertex {
+                position: [0.5, -0.25],
+            },
+        ]
+        .into_iter(),
+    )
+    .expect("Could not create vertex buffer")
 }
 
 fn main_loop(event_loop: EventLoop<()>, vulkan_connector: VulkanConnector) {
@@ -284,6 +302,7 @@ fn main_loop(event_loop: EventLoop<()>, vulkan_connector: VulkanConnector) {
                     &vulkan_connector.queue,
                     &vulkan_connector.framebuffers,
                     &vulkan_connector.graphics_pipeline,
+                    &vulkan_connector.vertex_buffer,
                 );
 
                 let (image_index, is_acquired_image_suboptimal, acquire_future) =
@@ -322,6 +341,7 @@ struct VulkanConnector {
     framebuffers: Vec<Arc<Framebuffer>>,
     graphics_pipeline: Arc<GraphicsPipeline>,
     swapchain: Arc<Swapchain<Window>>,
+    vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
 }
 
 fn main() {
@@ -337,6 +357,7 @@ fn main() {
         render_pass.clone(),
     );
     let framebuffers = setup_framebuffers(&images, render_pass.clone());
+    let vertex_buffer = setup_vertexbuffer(logical_device.clone());
 
     let vulkan_connector = VulkanConnector {
         logical_device,
@@ -344,6 +365,7 @@ fn main() {
         framebuffers,
         graphics_pipeline,
         swapchain,
+        vertex_buffer,
     };
 
     main_loop(event_loop, vulkan_connector);
