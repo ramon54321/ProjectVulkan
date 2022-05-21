@@ -246,7 +246,7 @@ fn setup_command_buffers(
                 .begin_render_pass(
                     framebuffer.clone(),
                     SubpassContents::Inline,
-                    vec![[0.0, 0.0, 1.0, 1.0].into()],
+                    vec![[0.0, 0.0, 0.0, 1.0].into()],
                 )
                 .expect("Could not begin render pass")
                 .bind_pipeline_graphics(graphics_pipeline.clone())
