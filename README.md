@@ -1,6 +1,6 @@
 ## Vulkan Rust
 
-![VulkanLogo](https://www.vulkan.org/user/themes/vulkan/images/logo/vulkan-logo.svg)
+<img src="https://www.vulkan.org/user/themes/vulkan/images/logo/vulkan-logo.svg" width="400">
 
 Small minimal demo setup of using [Vulkan](https://www.vulkan.org/) with [Rust](https://www.rust-lang.org/) through the [Vulkano](http://vulkano.rs/) library.
 
